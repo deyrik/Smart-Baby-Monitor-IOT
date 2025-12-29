@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitor do Bebê 3000</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center; 
+            padding: 20px; 
+            background-color: #f0f8ff; 
+            position: relative; 
+            min-height: 100vh;
+            overflow-x: hidden; /* Essencial para não criar barra de rolagem lateral */
+        }
+
+        /* --- CONFIGURAÇÃO DAS IMAGENS DE FUNDO (WALLPAPER) --- */
+        body::before, body::after {
+            content: "";
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            /* Aumentei para 60% para a imagem não ficar pequena ao ser empurrada */
+            width: 60%;      
+            height: 100vh;   
+            background-size: cover; 
+            background-repeat: no-repeat;
+            
+            /* MUDANÇA: Opacidade aumentada para 60% (mais visível) */
+            opacity: 0.6;   
+            
+            z-index: -1;     
+            pointer-events: none; 
+        }
+
+        /* Imagem da Esquerda (Baby) */
+        body::before {
+            /* MUDANÇA: Empurrei mais para a esquerda (-20%) */
+            left: -20%; 
+            background-position: left top; 
+            background-image: url('&&&*&&&/Data/baby-sleeping.png'); 
+        }
+
+        /* Imagem da Direita (Exterminador) */
+        body::after {
+            /* MUDANÇA: Empurrei mais para a direita (-20%) */
+            right: -20%;
+            background-position: right top; 
+            background-image: url('&&&*&&&/Data/exterminador.png'); 
+        }
+
+        /* --- ESTILO DOS TÍTULOS --- */
+        h1 { 
+            color: #333; 
+            /* Sombra branca mais forte para garantir leitura sobre o fundo mais escuro */
+            text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.9);
+            margin-top: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .subtitulo { 
+            display: block;      
+            font-size: 0.6em;    
+            color: #333; /* Cor mais escura para contraste */      
+            margin-top: 10px;    
+            font-weight: bold;
+        }
+
+        /* --- ESTILO DOS CARTÕES --- */
+        .card { 
+            /* Fundo branco sólido para máxima legibilidade */
+            background: rgba(255, 255, 255, 1.0); 
+            padding: 20px; 
+            border-radius: 15px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); /* Sombra mais forte */
+            margin: 20px auto; 
+            max-width: 600px; 
+            position: relative;
+            z-index: 1; 
+        }
+        
+        /* --- ESTILO DOS ALERTAS --- */
+        .alerta-box { 
+            display: none; 
+            padding: 20px; 
+            font-size: 24px; 
+            font-weight: bold; 
+            border-radius: 10px; 
+            animation: piscar 0.8s infinite; 
+            margin-bottom: 20px;
+            border: 3px solid white;
+            position: relative;
+            z-index: 10; 
+        }
+        #alerta-som { background-color: #ff4757; color: white; box-shadow: 0 0 25px rgba(0,0,0,0.6); }
+        #alerta-mov { background-color: #ffa502; color: white; box-shadow: 0 0 25px rgba(0,0,0,0.6); }
+
+        @keyframes piscar { 0% {opacity: 1; transform: scale(1);} 50% {opacity: 0.8; transform: scale(0.98);} 100% {opacity: 1; transform: scale(1);} }
+        
+        /* --- ESTILO DOS VALORES --- */
+        .valor { font-size: 2.5em; color: #007bff; font-weight: bold; }
+        .valor-secundario { font-size: 1.8em; color: #28a745; font-weight: bold; }
+        h3 { text-transform: uppercase; font-size: 0.9em; letter-spacing: 1px; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1> 
+        Monitorador de 👶Babys👶 3000 
+        <span class="subtitulo">Exterminator de Insegurança ❌🏴💀🏴❌</span>
+    </h1>
+    
+    <div id="alerta-som" class="alerta-box card">⚠️ ALERTA: BEBÊ CHORANDO! ⚠️</div>
+    <div id="alerta-mov" class="alerta-box card">⚡ ALERTA: MOVIMENTO BRUSCO! ⚡</div>
+
+    <div class="card">
+        <h3>Temperatura Atual</h3>
+        <div id="tempDisplay" class="valor">-- °C</div>
+        <canvas id="graficoTemp"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>Pressão Atmosférica</h3>
+        <div id="presDisplay" class="valor-secundario">-- kPa</div>
+        <small style="color: #888;">Indicador de ambiente</small>
+    </div>
+
+    <script>
+        const broker = "broker.hivemq.com";
+        const porta = 8000;
+        const topicoTemp = "baby/temperatura";
+        const topicoSom  = "baby/som";
+        const topicoPres = "baby/pressao";
+        const topicoMov  = "baby/movimento";
+
+        const ctx = document.getElementById('graficoTemp').getContext('2d');
+        const grafico = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], 
+                datasets: [{
+                    label: 'Temperatura (°C)',
+                    data: [],
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0
+                }]
+            },
+            options: { 
+                scales: { 
+                    y: { beginAtZero: false },
+                    x: { display: false }
+                },
+                plugins: { legend: { display: false } } 
+            }
+        });
+
+        const clienteID = "frontend_" + Math.random().toString(16).substr(2, 8);
+        const client = new Paho.MQTT.Client(broker, porta, clienteID);
+
+        client.onMessageArrived = function (message) {
+            const msg = message.payloadString;
+            const topico = message.destinationName;
+
+            if (topico === topicoTemp) {
+                document.getElementById("tempDisplay").innerText = msg + " °C";
+                const agora = new Date().toLocaleTimeString();
+                grafico.data.labels.push(agora);
+                grafico.data.datasets[0].data.push(parseFloat(msg));
+                
+                if(grafico.data.labels.length > 50) {
+                    grafico.data.labels.shift();
+                    grafico.data.datasets[0].data.shift();
+                }
+                grafico.update();
+            } 
+            else if (topico === topicoPres) {
+                document.getElementById("presDisplay").innerText = msg + " kPa";
+            }
+            else if (topico === topicoSom) {
+                const displayStyle = (msg === "1") ? "block" : "none";
+                document.getElementById("alerta-som").style.display = displayStyle;
+            }
+            else if (topico === topicoMov) {
+                const displayStyle = (msg === "1") ? "block" : "none";
+                document.getElementById("alerta-mov").style.display = displayStyle;
+            }
+        };
+
+        client.connect({
+            onSuccess: function () {
+                console.log("Conectado ao MQTT!");
+                client.subscribe(topicoTemp);
+                client.subscribe(topicoSom);
+                client.subscribe(topicoPres);
+                client.subscribe(topicoMov);
+            },
+            useSSL: false
+        });
+    </script>
+
+</body>
+</html>
