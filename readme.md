@@ -58,6 +58,9 @@ Para executar o projeto, é necessário:
 
 ##  Considerações Finais
 
-Este projeto consolida os principais conceitos abordados ao longo da disciplina,
+Este projeto consolida os principais conceitos abordados ao longo da disciplina de Iot,
 integrando **hardware**, **software**, **nuvem** e **inteligência artificial** em um sistema funcional.
+
+Exercicios e desenvolvimento disponiveis em: 
+https://github.com/deyrik/IOT
 
